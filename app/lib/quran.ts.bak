@@ -1,0 +1,256 @@
+import { Surah, Verse, Translation, Reciter, AudioFile, SearchResult } from '@/app/types/quran';
+import { getAccessToken } from '@/app/lib/auth';
+
+const QURAN_API_BASE = process.env.QURAN_API_BASE || 'https://api.quran.com/api/v4';
+const QURAN_API_TOKEN = process.env.QURAN_API_TOKEN;
+const FALLBACK_API_BASE = process.env.FALLBACK_QURAN_API_BASE || 'https://api.alquran.cloud/v1';
+
+let __oauthToken: string | null = null;
+let __oauthExpires = 0;
+
+// 🔑 Обеспечиваем актуальный токен
+async function ensureToken(): Promise<string | null> {
+  const hasCreds = !!(
+    process.env.QURAN_CLIENT_ID &&
+    process.env.QURAN_CLIENT_SECRET &&
+    (process.env.QURAN_OAUTH_TOKEN_BASE || process.env.QURAN_API_BASE)
+  );
+  if (!hasCreds) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (!__oauthToken || now >= __oauthExpires) {
+    const { access_token, expires_in } = await getAccessToken();
+    __oauthToken = access_token;
+    __oauthExpires = now + (expires_in || 3600) - 30; // renew slightly early
+  }
+  return __oauthToken;
+}
+
+// 🔎 Универсальный fetch
+export async function quranFetch(path: string, params?: Record<string, any>): Promise<any> {
+  try {
+    const url = new URL(path, QURAN_API_BASE);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          url.searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+
+    if (QURAN_API_TOKEN) {
+      headers['Authorization'] = `Bearer ${QURAN_API_TOKEN}`;
+    } else {
+      const token = await ensureToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    }
+
+    const response = await fetch(url.toString(), {
+      headers,
+      next: { revalidate: 3600 },
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    throw new Error(`Primary API failed: ${response.status}`);
+  } catch (error) {
+    console.warn('Primary API failed, trying fallback:', error);
+
+    // Fallback API (AlQuranCloud)
+    try {
+      const fallbackPath = mapToFallbackPath(path, params);
+      const fallbackUrl = new URL(fallbackPath, FALLBACK_API_BASE);
+
+      const fallbackResponse = await fetch(fallbackUrl.toString(), {
+        next: { revalidate: 3600 },
+      });
+
+      if (!fallbackResponse.ok) {
+        throw new Error(`Fallback API failed: ${fallbackResponse.status}`);
+      }
+
+      const fallbackData = await fallbackResponse.json();
+      return mapFallbackResponse(path, fallbackData);
+    } catch (fallbackError) {
+      console.error('Both APIs failed:', fallbackError);
+      throw new Error('All Quran APIs are unavailable');
+    }
+  }
+}
+
+// === Mapping helpers ===
+function mapToFallbackPath(originalPath: string, params?: Record<string, any>): string {
+  if (originalPath === '/chapters') return '/surah';
+  if (originalPath === '/quran/verses/uthmani') {
+    const chapterNumber = params?.chapter_number || 1;
+    return `/surah/${chapterNumber}`;
+  }
+  if (originalPath.startsWith('/quran/translations/')) {
+    const translationId = originalPath.split('/').pop();
+    const chapterNumber = params?.chapter_number || 1;
+    return `/surah/${chapterNumber}/${translationId}`;
+  }
+  if (originalPath === '/resources/translations')
+    return '/edition?format=text&type=translation';
+  if (originalPath === '/resources/recitations')
+    return '/edition?format=audio&type=versebyverse';
+  if (originalPath === '/search') {
+    const query = params?.q || '';
+    const language = params?.language || 'en';
+    return `/search/${encodeURIComponent(query)}/all/${language}`;
+  }
+  return originalPath;
+}
+
+function mapFallbackResponse(originalPath: string, fallbackData: any): any {
+  if (originalPath === '/chapters') {
+    return {
+      chapters: fallbackData.data?.map((surah: any) => ({
+        id: surah.number,
+        name_simple: surah.englishName,
+        name_complex: surah.englishName,
+        name_arabic: surah.name,
+        verses_count: surah.numberOfAyahs,
+        revelation_place: surah.revelationType,
+        bismillah_pre: surah.number !== 9,
+        translated_name: {
+          language_name: 'english',
+          name: surah.englishNameTranslation,
+        },
+      })),
+    };
+  }
+
+  if (originalPath === '/quran/verses/uthmani') {
+    return {
+      verses: fallbackData.data?.ayahs?.map((ayah: any) => ({
+        id: ayah.number,
+        verse_number: ayah.numberInSurah,
+        verse_key: `${ayah.surah.number}:${ayah.numberInSurah}`,
+        text_uthmani: ayah.text,
+        page_number: ayah.page || 1,
+        juz_number: ayah.juz || 1,
+      })),
+    };
+  }
+
+  return fallbackData;
+}
+
+// === API Functions ===
+export async function getChapters(): Promise<Surah[]> {
+  try {
+    const response = await quranFetch('/chapters');
+    return response.chapters || [];
+  } catch (error) {
+    console.error('Failed to fetch chapters:', error);
+    return [];
+  }
+}
+
+export async function getChapter(id: number): Promise<Surah | null> {
+  try {
+    const response = await quranFetch(`/chapters/${id}`);
+    return response.chapter || null;
+  } catch (error) {
+    console.error('Failed to fetch chapter:', error);
+    return null;
+  }
+}
+
+export async function getVerses(chapterNumber: number, page?: number, perPage = 50): Promise<Verse[]> {
+  try {
+    const params: Record<string, any> = { chapter_number: chapterNumber, per_page: perPage };
+    if (page) params.page = page;
+    const response = await quranFetch('/quran/verses/uthmani', params);
+    return response.verses || [];
+  } catch (error) {
+    console.error('Failed to fetch verses:', error);
+    return [];
+  }
+}
+
+export async function getTranslations(): Promise<Translation[]> {
+  try {
+    const response = await quranFetch('/resources/translations');
+    return response.translations || [];
+  } catch (error) {
+    console.error('Failed to fetch translations:', error);
+    return [];
+  }
+}
+
+export async function getTranslation(translationId: number, chapterNumber: number): Promise<Translation | null> {
+  try {
+    const response = await quranFetch(`/quran/translations/${translationId}`, {
+      chapter_number: chapterNumber,
+    });
+    return response.translation || null;
+  } catch (error) {
+    console.error('Failed to fetch translation:', error);
+    return null;
+  }
+}
+
+export async function getReciters(): Promise<Reciter[]> {
+  try {
+    const response = await quranFetch('/resources/recitations');
+    return response.recitations || [];
+  } catch (error) {
+    console.error('Failed to fetch reciters:', error);
+    return [];
+  }
+}
+
+export async function getChapterAudio(chapterId: number, reciterId: number): Promise<AudioFile[]> {
+  try {
+    const response = await quranFetch(`/chapter_recitations/${reciterId}`, {
+      chapter_number: chapterId,
+    });
+    return response.audio_files || [];
+  } catch (error) {
+    console.error('Failed to fetch chapter audio:', error);
+    return [];
+  }
+}
+
+export async function searchQuran(
+  query: string,
+  language = 'en',
+  page = 1
+): Promise<{ results: SearchResult[]; totalCount: number }> {
+  try {
+    const response = await quranFetch('/search', { q: query, language, page, per_page: 20 });
+    return {
+      results: response.search?.results || [],
+      totalCount: response.search?.total_count || 0,
+    };
+  } catch (error) {
+    console.error('Failed to search Quran:', error);
+    return { results: [], totalCount: 0 };
+  }
+}
+
+// === Utils ===
+export const getVerseKey = (chapterNumber: number, verseNumber: number) =>
+  `${chapterNumber}:${verseNumber}`;
+
+export const parseVerseKey = (verseKey: string) => {
+  const [chapter, verse] = verseKey.split(':').map(Number);
+  return { chapter, verse };
+};
+
+export const shouldShowBismillah = (chapterId: number) => chapterId !== 9;
+
+export const getNextChapter = (currentId: number) => (currentId < 114 ? currentId + 1 : null);
+
+export const getPreviousChapter = (currentId: number) => (currentId > 1 ? currentId - 1 : null);
