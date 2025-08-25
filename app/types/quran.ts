@@ -15,6 +15,7 @@ export interface Surah {
 }
 
 export interface Verse {
+  surah_id: number;
   id: number;
   verse_number: number;
   verse_key: string;

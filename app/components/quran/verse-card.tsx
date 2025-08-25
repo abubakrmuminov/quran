@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Bookmark, BookmarkCheck, Copy, Share, Volume2 } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Copy, Volume2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,39 +21,40 @@ interface VerseCardProps {
   isCurrentlyPlaying?: boolean;
 }
 
-export function VerseCard({ 
-  verse, 
-  chapterId, 
-  translations = [], 
+export function VerseCard({
+  verse,
+  chapterId,
+  translations = [],
   index,
   onPlayAudio,
-  isCurrentlyPlaying = false 
+  isCurrentlyPlaying = false
 }: VerseCardProps) {
   const { settings, addBookmark, removeBookmark, isBookmarked } = useQuranStore();
   const [copied, setCopied] = useState(false);
-  
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const isRTL = settings.language === 'ar';
   const bookmarked = isBookmarked(verse.verse_key);
   const showBismillah = verse.verse_number === 1 && shouldShowBismillah(chapterId);
 
   const handleBookmark = () => {
-    if (bookmarked) {
-      removeBookmark(verse.verse_key);
-    } else {
-      addBookmark({
-        surahId: chapterId,
-        verseNumber: verse.verse_number,
-        verseKey: verse.verse_key,
-        timestamp: Date.now(),
-      });
-    }
+    if (bookmarked) removeBookmark(verse.verse_key);
+    else addBookmark({
+      surahId: chapterId,
+      verseNumber: verse.verse_number,
+      verseKey: verse.verse_key,
+      timestamp: Date.now(),
+    });
   };
 
   const handleCopy = async () => {
     const arabicText = verse.text_uthmani || '';
     const translationText = translations.length > 0 ? translations[0].text : '';
     const verseText = `${arabicText}\n\n${translationText}\n\n— ${t('chapter', settings.language)} ${chapterId}, ${t('verse', settings.language)} ${verse.verse_number}`;
-    
     try {
       await navigator.clipboard.writeText(verseText);
       setCopied(true);
@@ -64,9 +65,7 @@ export function VerseCard({
   };
 
   const handlePlayAudio = () => {
-    if (onPlayAudio) {
-      onPlayAudio(verse.verse_key);
-    }
+    if (onPlayAudio) onPlayAudio(verse.verse_key);
   };
 
   const getFontSizeClass = () => {
@@ -90,84 +89,50 @@ export function VerseCard({
           {/* Verse Header */}
           <div className={`flex items-center justify-between mb-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
             <div className={`flex items-center gap-3 ${isRTL ? 'flex-row-reverse' : ''}`}>
-              <Badge variant="outline" className="font-mono">
-                {verse.verse_number}
-              </Badge>
-              <span className="text-sm text-muted-foreground">
-                {verse.verse_key}
-              </span>
-              {verse.page_number && (
-                <span className="text-xs text-muted-foreground">
-                  Page {verse.page_number}
-                </span>
-              )}
+              <Badge variant="outline" className="font-mono">{verse.verse_number}</Badge>
+              <span className="text-sm text-muted-foreground">{verse.verse_key}</span>
+              {verse.page_number && <span className="text-xs text-muted-foreground">Page {verse.page_number}</span>}
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handlePlayAudio}
-                className="h-8 w-8 p-0"
-                title={t('play', settings.language)}
-              >
-                <Volume2 className={`h-4 w-4 ${isCurrentlyPlaying ? 'text-primary' : ''}`} />
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleBookmark}
-                className="h-8 w-8 p-0"
-                title={bookmarked ? t('removeBookmark', settings.language) : t('bookmark', settings.language)}
-              >
-                {bookmarked ? (
-                  <BookmarkCheck className="h-4 w-4 text-primary" />
-                ) : (
-                  <Bookmark className="h-4 w-4" />
-                )}
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleCopy}
-                className="h-8 w-8 p-0"
-                title={t('copyLink', settings.language)}
-              >
-                <Copy className={`h-4 w-4 ${copied ? 'text-green-500' : ''}`} />
-              </Button>
-            </div>
+            {mounted && (
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button variant="ghost" size="sm" onClick={handlePlayAudio} className="h-8 w-8 p-0" title={t('play', settings.language)}>
+                  <Volume2 className={`h-4 w-4 ${isCurrentlyPlaying ? 'text-primary' : ''}`} />
+                </Button>
+
+                <Button variant="ghost" size="sm" onClick={handleBookmark} className="h-8 w-8 p-0"
+                  title={bookmarked ? t('removeBookmark', settings.language) : t('bookmark', settings.language)}>
+                  {bookmarked ? <BookmarkCheck className="h-4 w-4 text-primary" /> : <Bookmark className="h-4 w-4" />}
+                </Button>
+
+                <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 w-8 p-0" title={t('copyLink', settings.language)}>
+                  <Copy className={`h-4 w-4 ${copied ? 'text-green-500' : ''}`} />
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Bismillah */}
           {showBismillah && (
             <div className="text-center mb-6">
-              <p 
-                className="font-arabic text-2xl text-muted-foreground leading-relaxed"
-                style={{ lineHeight: settings.lineHeight }}
-              >
+              <p className="font-arabic text-2xl text-muted-foreground leading-relaxed" style={{ lineHeight: settings.lineHeight }}>
                 بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
               </p>
-              <p className="text-sm text-muted-foreground mt-2">
-                In the name of Allah, the Beneficent, the Merciful
-              </p>
+              <p className="text-sm text-muted-foreground mt-2">In the name of Allah, the Beneficent, the Merciful</p>
             </div>
           )}
 
           {/* Arabic Text */}
           <div className={`mb-4 ${isRTL ? 'text-right' : 'text-center'}`}>
-            <p 
-              className={`font-arabic ${getFontSizeClass()} leading-relaxed text-foreground`}
-              style={{ 
+            <p className={`font-arabic ${getFontSizeClass()} leading-relaxed text-foreground`}
+              style={{
                 lineHeight: settings.lineHeight,
-                fontFamily: settings.arabicFont === 'uthmani' ? '"Noto Naskh Arabic", serif' : 
-                           settings.arabicFont === 'indopak' ? '"Noto Naskh Arabic", serif' : 
-                           '"Noto Naskh Arabic", serif'
+                fontFamily: settings.arabicFont === 'uthmani' ? '"Noto Naskh Arabic", serif' :
+                            settings.arabicFont === 'indopak' ? '"Noto Naskh Arabic", serif' :
+                            '"Noto Naskh Arabic", serif'
               }}
-              dir="rtl"
-              lang="ar"
+              dir="rtl" lang="ar"
             >
               {settings.showTajweed && verse.text_uthmani_tajweed ? (
                 <span dangerouslySetInnerHTML={{ __html: verse.text_uthmani_tajweed }} />
@@ -184,16 +149,11 @@ export function VerseCard({
               <div className="space-y-3">
                 {translations.map((translation, idx) => (
                   <div key={`${translation.resource_name}-${idx}`}>
-                    <p 
-                      className={`text-base leading-relaxed text-muted-foreground ${isRTL ? 'text-right' : 'text-left'}`}
-                      style={{ lineHeight: settings.lineHeight }}
-                      dir={isRTL ? 'rtl' : 'ltr'}
-                    >
+                    <p className={`text-base leading-relaxed text-muted-foreground ${isRTL ? 'text-right' : 'text-left'}`}
+                      style={{ lineHeight: settings.lineHeight }} dir={isRTL ? 'rtl' : 'ltr'}>
                       {translation.text}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1 opacity-70">
-                      — {translation.resource_name}
-                    </p>
+                    <p className="text-xs text-muted-foreground mt-1 opacity-70">— {translation.resource_name}</p>
                   </div>
                 ))}
               </div>

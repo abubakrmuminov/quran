@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserSettings, BookmarkData, LastReadData } from '@/app/types/quran';
+import quranData from '@/app/lib/quran-data.json'
 
 interface QuranStore {
   // Settings
@@ -43,6 +44,7 @@ const defaultSettings: UserSettings = {
   autoScroll: true,
 };
 
+
 export const useQuranStore = create<QuranStore>()(
   persist(
     (set, get) => ({
@@ -79,6 +81,10 @@ export const useQuranStore = create<QuranStore>()(
       // UI state
       sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
+
+      getVerse: (verseKey: string) => {
+        return quranData.find(v => v.verse_key === verseKey);
+      },
     }),
     {
       name: 'quran-store',

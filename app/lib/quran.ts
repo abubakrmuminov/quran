@@ -1,5 +1,6 @@
-// Safe client/server Quran API helpers with fallback to AlQuran Cloud.
-import { Surah, Verse, Translation, Reciter, AudioFile, SearchResult } from '@/app/types/quran';
+// quran.ts — универсальный клиент для Quran API с fallback
+
+import { Surah, Verse, Translation, Reciter, AudioFile, SearchResult, TranslatedVerse } from '@/app/types/quran';
 import { getAccessToken } from '@/app/lib/auth';
 
 const QURAN_API_BASE = process.env.QURAN_API_BASE || 'https://api.quran.com/api/v4';
@@ -17,8 +18,6 @@ async function ensureToken(): Promise<string | null> {
     (process.env.QURAN_OAUTH_TOKEN_BASE || process.env.QURAN_API_BASE)
   );
   if (!hasCreds && !QURAN_API_TOKEN) return null;
-
-  // use legacy token if provided
   if (!hasCreds && QURAN_API_TOKEN) return QURAN_API_TOKEN as string;
 
   const now = Math.floor(Date.now() / 1000);
@@ -30,110 +29,100 @@ async function ensureToken(): Promise<string | null> {
   return __oauthToken;
 }
 
-// === FALLBACK URL MAP ===
-function mapToFallbackPath(originalPath: string, params?: Record<string, any>): string {
-  if (originalPath === '/chapters') return '/surah';
-  if (originalPath === '/quran/verses/uthmani') {
-    const chapter = params?.chapter_number || params?.chapter || 1;
-    return `/surah/${chapter}`;
+// === MAP TO FALLBACK ===
+function mapToFallbackPath(path: string, params?: Record<string, any>): string {
+  if (path === '/chapters') return '/surah';
+  if (path === '/quran/verses/uthmani') return `/surah/${params?.chapter_number || 1}`;
+  if (path.startsWith('/quran/translations/')) {
+    return `/surah/${params?.chapter_number || 1}/${params?.translationCode || 'en.asad'}`;
   }
-  if (originalPath.startsWith('/quran/translations/')) {
-    const chapter = params?.chapter_number || params?.chapter || 1;
-    const id = originalPath.split('/').pop();
-    return `/surah/${chapter}/${id}`;
-  }
-  if (originalPath === '/resources/translations')
-    return '/edition?format=text&type=translation';
-  if (originalPath === '/resources/recitations')
-    return '/edition?format=audio&type=versebyverse';
-  if (originalPath === '/search') {
-    const query = params?.q || '';
-    const language = params?.language || 'en';
-    return `/search/${encodeURIComponent(query)}/all/${language}`;
-  }
-  return originalPath;
+  if (path === '/resources/translations') return '/edition?format=text&type=translation';
+  if (path === '/resources/recitations') return '/edition?format=audio&type=versebyverse';
+  if (path === '/search') return `/search/${encodeURIComponent(params?.q || '')}/all/${params?.language || 'en'}`;
+  return path;
 }
 
-// === FALLBACK RESPONSE MAP ===
-function mapFallbackResponse(originalPath: string, fallbackData: any): any {
-  if (originalPath === '/chapters') {
+// === MAP FALLBACK RESPONSE ===
+function mapFallbackResponse(path: string, data: any) {
+  if (path === '/chapters') {
     return {
-      chapters: fallbackData.data?.map((surah: any) => ({
-        id: surah.number,
-        name_simple: surah.englishName,
-        name_complex: surah.englishName,
-        name_arabic: surah.name,
-        verses_count: surah.numberOfAyahs,
-        revelation_place: surah.revelationType,
-        bismillah_pre: surah.number !== 9,
-        translated_name: {
-          language_name: 'english',
-          name: surah.englishNameTranslation,
-        },
-      })) || [],
-    };
-  }
-
-  if (originalPath === '/quran/verses/uthmani') {
-    const ayahs = fallbackData.data?.ayahs || [];
-    const chapterNumber = fallbackData.data?.number || 0; // Fallback to 0 if undefined
-    return {
-      verses: ayahs.map((ayah: any) => ({
-        id: ayah.number,
-        verse_key: `${chapterNumber}:${ayah.numberInSurah}`,
-        text_uthmani: ayah.text,
+      chapters: (data.data || []).map((s: any) => ({
+        id: s.number,
+        name_simple: s.englishName,
+        name_complex: s.englishName,
+        name_arabic: s.name,
+        verses_count: s.numberOfAyahs,
+        revelation_place: s.revelationType,
+        bismillah_pre: s.number !== 9,
+        translated_name: { language_name: 'english', name: s.englishNameTranslation },
       })),
     };
   }
 
-  if (originalPath.startsWith('/quran/translations/')) {
-    const chapter = fallbackData?.data?.ayahs || [];
+  if (path === '/quran/verses/uthmani') {
+    const ayahs = data.data?.ayahs || [];
+    const chapterNumber = data.data?.number || 0;
     return {
-      translation: chapter.map((a: any) => ({
+      verses: ayahs.map((a: any) => ({
         id: a.number,
-        verse_key: `${a.surah?.number || fallbackData.data?.number || 'unknown'}:${a.numberInSurah}`,
+        verse_key: `${chapterNumber}:${a.numberInSurah}`,
+        text_uthmani: a.text,
+        verse_number: a.numberInSurah,
+      })),
+    };
+  }
+
+  if (path.startsWith('/quran/translations/')) {
+    const ayahs = data.data?.ayahs || [];
+    const chapterNumber = data.data?.number || 0;
+    return {
+      translation: ayahs.map((a: any) => ({
+        verse_key: `${chapterNumber}:${a.numberInSurah}`,
         text: a.text,
+        verse_number: a.numberInSurah,
       })),
     };
   }
 
-  if (originalPath === '/resources/translations') {
+  if (path === '/resources/translations') {
     return {
-      translations: (fallbackData.data || []).map((e: any, idx: number) => ({
+      translations: (data.data || []).map((t: any, idx: number) => ({
         id: idx + 1,
-        name: e.englishName,
-        author_name: e.englishName,
-        language_name: e.language,
+        name: t.englishName,
+        author_name: t.englishName,
+        language_name: t.language,
+        resource_id: idx + 1,
+        translated_name: { name: t.englishName },
       })),
     };
   }
 
-  if (originalPath === '/resources/recitations') {
+  if (path === '/resources/recitations') {
     return {
-      recitations: (fallbackData.data || []).map((e: any, idx: number) => ({
+      recitations: (data.data || []).map((r: any, idx: number) => ({
         id: idx + 1,
-        reciter_name: e.englishName,
-        style: e.format,
+        reciter_name: r.englishName,
+        style: r.format,
       })),
     };
   }
 
-  if (originalPath === '/search') {
+  if (path === '/search') {
     return {
-      results: (fallbackData.data?.matches || []).map((m: any) => ({
+      results: (data.data?.matches || []).map((m: any) => ({
         verse_key: `${m.surah?.number || 'unknown'}:${m.numberInSurah}`,
         text: m.text,
         highlighted: m.text,
       })),
-      total_matches: fallbackData.data?.count || 0,
+      total_matches: data.data?.count || 0,
     };
   }
 
-  return fallbackData;
+  return data;
 }
 
 // === UNIVERSAL FETCH ===
-export async function quranFetch(path: string, params?: Record<string, any>): Promise<any> {
+export async function quranFetch(path: string, params?: Record<string, any>) {
   try {
     // client -> proxy
     if (typeof window !== 'undefined') {
@@ -146,18 +135,15 @@ export async function quranFetch(path: string, params?: Record<string, any>): Pr
     }
 
     // server -> API
-    const baseUrl = QURAN_API_BASE.replace(/\/$/, '');
-    const url = new URL(path, baseUrl);
+    const url = new URL(path, QURAN_API_BASE);
     if (params) Object.entries(params).forEach(([k, v]) => v != null && url.searchParams.append(k, String(v)));
-
     const headers: Record<string, string> = {};
     const token = await ensureToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const res = await fetch(url.toString(), { headers, cache: 'no-store' });
 
-    if (res.status === 401 || res.status === 403 || (!res.ok && FALLBACK_API_BASE)) {
-      // fallback
+    if (!res.ok && FALLBACK_API_BASE) {
       const fbUrl = new URL(mapToFallbackPath(path, params), FALLBACK_API_BASE.replace(/\/$/, ''));
       const fbRes = await fetch(fbUrl.toString(), { cache: 'no-store' });
       const fbData = await fbRes.json();
@@ -166,7 +152,6 @@ export async function quranFetch(path: string, params?: Record<string, any>): Pr
 
     return res.json();
   } catch (err) {
-    // last resort fallback
     if (FALLBACK_API_BASE) {
       const fbUrl = new URL(mapToFallbackPath(path, params), FALLBACK_API_BASE.replace(/\/$/, ''));
       const fbRes = await fetch(fbUrl.toString(), { cache: 'no-store' });
@@ -184,9 +169,8 @@ export async function getChapters(): Promise<Surah[]> {
 }
 
 export async function getChapter(id: number): Promise<Surah | null> {
-  const response = await quranFetch('/chapters');
-  const chapters = response.chapters || [];
-  return chapters.find((c: any) => c.id === id) || null;
+  const chapters = await getChapters();
+  return chapters.find(c => c.id === id) || null;
 }
 
 export async function getVersesUthmani(chapterNumber: number): Promise<Verse[]> {
@@ -199,9 +183,15 @@ export async function getTranslationsList(): Promise<Translation[]> {
   return response.translations || [];
 }
 
-export async function getTranslation(translationId: number, chapterNumber: number): Promise<Translation | null> {
-  const response = await quranFetch(`/quran/translations/${translationId}`, { chapter_number: chapterNumber });
-  return response.translation || null;
+// ключевая правка для переводов
+export async function getTranslation(translationCode: string, chapterNumber: number): Promise<TranslatedVerse[]> {
+  const response = await quranFetch(`/quran/translations/${translationCode}`, { chapter_number: chapterNumber, translationCode });
+  if (!response?.translation || !Array.isArray(response.translation)) return [];
+  return response.translation.map((t: any) => ({
+    verse_key: t.verse_key,
+    text: t.text,
+    verse_number: t.verse_number,
+  }));
 }
 
 export async function getReciters(): Promise<Reciter[]> {
@@ -214,11 +204,7 @@ export async function getChapterAudio(chapterId: number, reciterId: number): Pro
   return response.audio_files || [];
 }
 
-export async function searchQuran(
-  query: string,
-  language: string,
-  page: number = 1
-): Promise<{ results: SearchResult[]; totalCount: number }> {
+export async function searchQuran(query: string, language: string, page: number = 1): Promise<{ results: SearchResult[]; totalCount: number }> {
   const response = await quranFetch('/search', { q: query, language, page });
   const results = response.results || response.matches || [];
   const totalCount = response.total_matches || response.count || 0;
@@ -235,6 +221,6 @@ export const shouldShowBismillah = (chapterId: number) => chapterId !== 9;
 export const getNextChapter = (currentId: number) => (currentId < 114 ? currentId + 1 : null);
 export const getPreviousChapter = (currentId: number) => (currentId > 1 ? currentId - 1 : null);
 
-// === ALIASES (чтобы не было "is not a function") ===
+// === ALIASES ===
 export const getVerses = getVersesUthmani;
 export const getTranslations = getTranslationsList;
