@@ -15,6 +15,7 @@ export interface Surah {
 }
 
 export interface Verse {
+  chapter_id: number;
   surah_id: number;
   id: number;
   verse_number: number;
@@ -32,6 +33,14 @@ export interface Verse {
   text_indopak?: string;
   words?: Word[];
 }
+
+export interface LocalVerse {
+  verse_key: string;
+  chapter_id: number;
+  verse_number: number;
+  text_uthmani: string;
+}
+
 
 export interface Word {
   id: number;
