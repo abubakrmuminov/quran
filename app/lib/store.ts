@@ -78,27 +78,8 @@ export const useQuranStore = create<QuranStore>()(
       sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-      getVerse: (verseKey: string): Verse | undefined => {
-        const v = quranData.find((v: any) => v.verse_key === verseKey);
-        if (!v) return undefined;
-      
-        return {
-          id: v.id ?? 0,
-          surah_id: v.chapter_id,
-          verse_key: v.verse_key,
-          chapter_id: v.chapter_id,
-          verse_number: v.verse_number,
-          hizb_number: v.hizb_number ?? 0,
-          rub_number: v.rub_number ?? 0,
-          rukus: (v.rukus ?? []) as number[],
-          sajdah: v.sajdah ?? false,
-          page_number: v.page_number ?? 1,
-          text_uthmani: v.text_uthmani,
-          text_indopak: v.text_indopak ?? '',
-          text_imlaei: v.text_imlaei ?? '',
-          text_uthmani_tajweed: v.text_uthmani_tajweed ?? '',
-        };
-      }
+      getVerse: () => undefined,
+
       
       
       
