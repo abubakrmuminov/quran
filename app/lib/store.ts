@@ -4,7 +4,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { UserSettings, BookmarkData, LastReadData, Verse } from '@/app/types/quran';
-import quranData from '@/app/lib/quran-data.json';
 
 
 interface QuranStore {
@@ -18,6 +17,7 @@ interface QuranStore {
   addBookmark: (bookmark: BookmarkData) => void;
   removeBookmark: (verseKey: string) => void;
   isBookmarked: (verseKey: string) => boolean;
+  getBookmark: (verseKey: string) => BookmarkData | undefined;
 
   isPlaying: boolean;
   currentVerse: string | null;
@@ -27,7 +27,10 @@ interface QuranStore {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
 
-  getVerse: (verseKey: string) => Verse | undefined;
+  // Utility functions
+  clearAllBookmarks: () => void;
+  exportBookmarks: () => string;
+  importBookmarks: (data: string) => boolean;
 }
 
 const defaultSettings: UserSettings = {
@@ -69,6 +72,8 @@ export const useQuranStore = create<QuranStore>()(
         })),
       isBookmarked: (verseKey) =>
         get().bookmarks.some((b) => b.verseKey === verseKey),
+      getBookmark: (verseKey) =>
+        get().bookmarks.find((b) => b.verseKey === verseKey),
 
       isPlaying: false,
       currentVerse: null,
@@ -78,12 +83,22 @@ export const useQuranStore = create<QuranStore>()(
       sidebarOpen: false,
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-      getVerse: () => undefined,
 
-      
-      
-      
-      
+      // Utility functions
+      clearAllBookmarks: () => set({ bookmarks: [] }),
+      exportBookmarks: () => JSON.stringify(get().bookmarks),
+      importBookmarks: (data) => {
+        try {
+          const bookmarks = JSON.parse(data) as BookmarkData[];
+          if (Array.isArray(bookmarks)) {
+            set({ bookmarks });
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      },
     }),
     {
       name: 'quran-store',

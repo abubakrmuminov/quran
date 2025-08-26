@@ -32,6 +32,7 @@ export function VerseCard({
   const { settings, addBookmark, removeBookmark, isBookmarked } = useQuranStore();
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [bookmarkLoading, setBookmarkLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -42,13 +43,23 @@ export function VerseCard({
   const showBismillah = verse.verse_number === 1 && shouldShowBismillah(chapterId);
 
   const handleBookmark = () => {
-    if (bookmarked) removeBookmark(verse.verse_key);
-    else addBookmark({
-      surahId: chapterId,
-      verseNumber: verse.verse_number,
-      verseKey: verse.verse_key,
-      timestamp: Date.now(),
-    });
+    setBookmarkLoading(true);
+    try {
+      if (bookmarked) {
+        removeBookmark(verse.verse_key);
+      } else {
+        addBookmark({
+          surahId: chapterId,
+          verseNumber: verse.verse_number,
+          verseKey: verse.verse_key,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (error) {
+      console.error('Failed to toggle bookmark:', error);
+    } finally {
+      setBookmarkLoading(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -103,7 +114,13 @@ export function VerseCard({
 
                 <Button variant="ghost" size="sm" onClick={handleBookmark} className="h-8 w-8 p-0"
                   title={bookmarked ? t('removeBookmark', settings.language) : t('bookmark', settings.language)}>
-                  {bookmarked ? <BookmarkCheck className="h-4 w-4 text-primary" /> : <Bookmark className="h-4 w-4" />}
+                  {bookmarkLoading ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                  ) : bookmarked ? (
+                    <BookmarkCheck className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Bookmark className="h-4 w-4" />
+                  )}
                 </Button>
 
                 <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 w-8 p-0" title={t('copyLink', settings.language)}>

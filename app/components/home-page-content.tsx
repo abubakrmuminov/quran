@@ -38,7 +38,11 @@ export function HomePageContent({ chapters }: HomePageContentProps) {
   // Get recent bookmarks for display
   const recentBookmarks = bookmarks
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 3);
+    .slice(0, 3)
+    .map(bookmark => ({
+      ...bookmark,
+      chapterName: chapters.find(c => c.id === bookmark.surahId)?.name_simple || `Chapter ${bookmark.surahId}`
+    }));
 
   return (
     <div className="space-y-12" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -141,15 +145,24 @@ export function HomePageContent({ chapters }: HomePageContentProps) {
                     <Badge variant="outline">{bookmark.verseKey}</Badge>
                     <Link 
                       href={`/surah/${bookmark.surahId}?verse=${bookmark.verseNumber}`}
-                      className="block text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="block hover:text-foreground transition-colors"
                     >
-                      {t('chapter', settings.language)} {bookmark.surahId}, {t('verse', settings.language)} {bookmark.verseNumber}
+                      <p className="font-medium text-foreground">{bookmark.chapterName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {t('verse', settings.language)} {bookmark.verseNumber}
+                      </p>
                     </Link>
                     {bookmark.note && (
                       <p className="text-xs text-muted-foreground line-clamp-2">
                         {bookmark.note}
                       </p>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(bookmark.timestamp).toLocaleDateString(
+                        settings.language === 'ar' ? 'ar-SA' : 
+                        settings.language === 'ru' ? 'ru-RU' : 'en-US'
+                      )}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
