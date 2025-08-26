@@ -173,10 +173,11 @@ export async function getChapter(id: number): Promise<Surah | null> {
   return chapters.find(c => c.id === id) || null;
 }
 
-export async function getVersesUthmani(chapterNumber: number): Promise<Verse[]> {
-  const response = await quranFetch('/quran/verses/uthmani', { chapter_number: chapterNumber });
+export async function getVersesUthmani(chapterId: number): Promise<Verse[]> {
+  const response = await quranFetch('/quran/verses/uthmani', { chapter_id: chapterId, per_page: 300 });
   return response.verses || [];
 }
+
 
 export async function getTranslationsList(): Promise<Translation[]> {
   const response = await quranFetch('/resources/translations');
